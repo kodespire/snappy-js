@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest';
 import * as constants from '../src/version.js';
 
 const root = join(import.meta.dirname, '..');
-const read = (path: string) => readFileSync(join(root, path), 'utf8');
+// Line endings normalised: Windows checkouts of this repo (not the submodule) use CRLF.
+const read = (path: string) => readFileSync(join(root, path), 'utf8').replaceAll('\r\n', '\n');
 const [major, minor, patch] = /project\(Snappy VERSION (\d+)\.(\d+)\.(\d+)/.exec(read('deps/snappy/CMakeLists.txt'))!.slice(1);
 
 describe('version and generated-header guards', () => {

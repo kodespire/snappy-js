@@ -127,7 +127,7 @@ jobs:
         run: EXPECT_BACKEND=native node smoke.mjs
       - name: Node (forced WebAssembly)
         working-directory: consumer
-        run: ZSTD_JS_BACKEND=wasm EXPECT_BACKEND=wasm node smoke.mjs
+        run: SNAPPY_JS_BACKEND=wasm EXPECT_BACKEND=wasm node smoke.mjs
       - name: Bun
         working-directory: consumer
         run: EXPECT_BACKEND=native bun smoke.mjs
