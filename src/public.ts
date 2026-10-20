@@ -37,7 +37,7 @@ export declare function compressSync(data: Bytes | string, options?: CompressOpt
  *
  * Throws a {@link SnappyError} with code `ERR_SNAPPY_TRUNCATED` if the input ends partway through
  * a block or chunk (empty raw input included; empty framed input is an empty stream), `ERR_SNAPPY_OUTPUT_LIMIT` if the output would exceed
- * `maxOutputSize`, and `ERR_SNAPPY_CORRUPT` if the data is not valid snappy in the given
+ * `maxOutputSize`, and `ERR_SNAPPY_LIBRARY` if the data is not valid snappy in the given
  * format. It never returns partial output.
  *
  * @example
@@ -52,7 +52,7 @@ export declare function decompressSync(data: Bytes, options?: DecompressOptions)
 
 /**
  * The uncompressed length recorded in a raw block's header (raw format only). Throws
- * `ERR_SNAPPY_TRUNCATED` or `ERR_SNAPPY_CORRUPT` if the header is cut off or invalid. Headers
+ * `ERR_SNAPPY_TRUNCATED` or `ERR_SNAPPY_LIBRARY` if the header is cut off or invalid. Headers
  * are untrusted input: still set `maxOutputSize`.
  */
 export declare function getUncompressedLength(data: Bytes): number;

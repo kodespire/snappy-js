@@ -35,7 +35,7 @@ describe.each(backends)('%s backend: options', (_name, z) => {
     expect(z.isSnappyFramed(raw)).toBe(false);
     expect(z.isSnappyFramed(framed)).toBe(true);
     expect(z.getUncompressedLength(raw)).toBe(corpus.length);
-    expect(syncErrorCode(() => z.decompressSync(raw, { format: 'framed' }))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.decompressSync(raw, { format: 'framed' }))).toBe('ERR_SNAPPY_LIBRARY');
     expect(syncErrorCode(() => z.decompressSync(framed))).not.toBe('no error');
   });
 
@@ -96,7 +96,7 @@ describe.each(backends)('%s backend: options', (_name, z) => {
     expect(z.getUncompressedLength(new Uint8Array([0xfe, 0xff, 0xff, 0xff, 0x0f]))).toBe(0xfffffffe);
     expect(syncErrorCode(() => z.getUncompressedLength(new Uint8Array(0)))).toBe('ERR_SNAPPY_TRUNCATED');
     expect(syncErrorCode(() => z.getUncompressedLength(new Uint8Array([0x80, 0x80])))).toBe('ERR_SNAPPY_TRUNCATED');
-    expect(syncErrorCode(() => z.getUncompressedLength(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80])))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.getUncompressedLength(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80])))).toBe('ERR_SNAPPY_LIBRARY');
     expect(z.isSnappyFramed(STREAM_IDENTIFIER)).toBe(true);
     expect(z.isSnappyFramed(STREAM_IDENTIFIER.subarray(0, 9))).toBe(false);
     expect(z.isSnappyFramed(corpus)).toBe(false);

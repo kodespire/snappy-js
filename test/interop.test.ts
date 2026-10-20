@@ -95,8 +95,8 @@ describe.each(backends)('%s backend: google/snappy test vectors (deps/snappy/tes
   });
 
   it.each(['baddata1.snappy', 'baddata2.snappy', 'baddata3.snappy'])('%s is rejected', async (name) => {
-    expect(syncErrorCode(() => z.decompressSync(testdata(name)))).toBe('ERR_SNAPPY_CORRUPT');
-    await expect(z.decompress(testdata(name))).rejects.toMatchObject({ code: 'ERR_SNAPPY_CORRUPT' });
+    expect(syncErrorCode(() => z.decompressSync(testdata(name)))).toBe('ERR_SNAPPY_LIBRARY');
+    await expect(z.decompress(testdata(name))).rejects.toMatchObject({ code: 'ERR_SNAPPY_LIBRARY' });
   });
 });
 

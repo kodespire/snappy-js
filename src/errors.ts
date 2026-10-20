@@ -1,6 +1,6 @@
 export type SnappyErrorCode =
   /** The data is not valid snappy: a bad block, a checksum mismatch, an unknown required chunk. */
-  | 'ERR_SNAPPY_CORRUPT'
+  | 'ERR_SNAPPY_LIBRARY'
   /** The input ended partway through a raw block or a framed chunk, or was empty. */
   | 'ERR_SNAPPY_TRUNCATED'
   /** Decompressed output would exceed `maxOutputSize`. */
@@ -23,7 +23,7 @@ export class SnappyError extends Error {
 // Indexed by the SJS_ERR_* values in csrc/sjs.h.
 const CODES: readonly (SnappyErrorCode | undefined)[] = [
   undefined,
-  'ERR_SNAPPY_CORRUPT',
+  'ERR_SNAPPY_LIBRARY',
   'ERR_SNAPPY_TRUNCATED',
   'ERR_SNAPPY_OUTPUT_LIMIT',
   'ERR_SNAPPY_OUT_OF_MEMORY',
@@ -31,7 +31,7 @@ const CODES: readonly (SnappyErrorCode | undefined)[] = [
 ];
 
 export function errorFromCore(rc: number, detail: string): SnappyError {
-  return new SnappyError(CODES[rc] ?? 'ERR_SNAPPY_CORRUPT', detail);
+  return new SnappyError(CODES[rc] ?? 'ERR_SNAPPY_LIBRARY', detail);
 }
 
 /** Converts an error thrown by the native addon into a SnappyError with a JavaScript stack. */
