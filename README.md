@@ -40,7 +40,7 @@ Snappy data comes in two formats, and they can't be read as each other. Pass the
 | --- | --- | --- |
 | What it is | One Snappy block: the uncompressed length as a varint, then the compressed data | A `sNaPpY` stream identifier, then chunks of at most 64 KiB, as described in [framing_format.txt](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Checksum | None | A masked CRC-32C of each chunk's data, checked on decompression |
-| Size limit | 4 GiB - 1 bytes of input | None |
+| Size limit | 4 GiB - 1 bytes of input | None for streams; one-shot calls are limited by memory |
 | Streaming | No: the whole block is in memory | Yes: `createCompressStream()` and `createDecompressStream()` |
 | Used by | Parquet, LevelDB, Prometheus remote write | Go's and Rust's Snappy stream readers and writers, python-snappy streams, `Content-Encoding: x-snappy-framed` |
 
@@ -146,6 +146,7 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
 ## Behaviour details
 
 - **Raw blocks have no checksum.** A damaged length, tag or offset is caught, and output never comes back longer or shorter than the header says. But damage inside literal bytes decodes to wrong bytes, as with any Snappy decoder. Use the framing format when you need corruption detected.
+- **WebAssembly validates raw blocks twice.** One of snappy's checks relies on a 64-bit `size_t`: in wasm32, a literal length of 2^32 wraps to 0, so snappy alone would accept a block that native builds reject. Where `size_t` is 32 bits, every block must also pass a second validator using 64-bit arithmetic, so both backends accept exactly the same input.
 - **Every proper prefix of a raw block throws** `ERR_SNAPPY_TRUNCATED`. That includes an empty input, since even an empty block has a 1-byte header.
 - **A framed stream cut between two chunks can't be detected.** The framing format has no end-of-stream marker, so that cut looks like a complete, shorter stream. A cut anywhere inside a chunk throws `ERR_SNAPPY_TRUNCATED`.
 - **An empty input is a valid, empty framed stream**, which is what Go's and Rust's encoders write for no data. Like any cut between chunks, it can't be told apart from a truncation. This differs on purpose from zstd-js, where empty input is an error. Compressing empty input writes just the 10-byte stream identifier.
@@ -156,7 +157,7 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
   - Every checksum is verified.
 - **Framed chunk limits.** A data chunk may hold at most 65,536 bytes of output. A compressed chunk can't be longer than the most any Snappy encoder writes for that much data, which Go's decoder also enforces. Longer chunks are rejected from their header, before they are buffered, so a decompress stream never holds more than about 75 KB of input.
 - **Compressed chunks must save at least 12.5%.** The compressor stores a chunk uncompressed otherwise, like the Go and Rust encoders. Chunks always hold 64 KiB of input except the last.
-- **Output is the same on every platform.** Snappy can use a hardware CRC instruction as its hash, which changes the compressed bytes. That option is off, so native output on every platform and WebAssembly output all match byte for byte. Decompression uses SSSE3/BMI2/NEON only where the compiler targets them by default (NEON on 64-bit ARM), and plain code in WebAssembly.
+- **Output is the same on every platform.** Snappy can use a hardware CRC instruction as its hash, which changes the compressed bytes. That option is off, so native output on every platform and WebAssembly output all match byte for byte. Decompression uses SSSE3/BMI2/NEON only where the compiler targets them by default (in the prebuilt binaries, NEON on 64-bit ARM Linux and macOS), and plain code in WebAssembly and MSVC builds.
 - **The async functions use separate threads only on the native addon**, which runs them on Node's thread pool. The WebAssembly backend runs on the calling thread, so for large inputs in a browser, call it from a Web Worker.
 - **Forcing WebAssembly:** set `SNAPPY_JS_BACKEND=wasm` in Node.js, or import `@kodespire/snappy-js/wasm` in any runtime.
 

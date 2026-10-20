@@ -109,3 +109,16 @@ describe.each(backends)('%s backend: options', (_name, z) => {
     }
   });
 });
+
+describe('loading snappy.wasm in Node', () => {
+  it('accepts a relative path, an absolute path, a file: URL and bytes', async () => {
+    const { compileWasm } = await import('../dist/load-wasm-node.js');
+    const { join, relative } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+    const { readFileSync } = await import('node:fs');
+    const absolute = join(import.meta.dirname, '..', 'dist', 'snappy.wasm');
+    for (const source of [relative(process.cwd(), absolute), absolute, pathToFileURL(absolute), pathToFileURL(absolute).href, readFileSync(absolute)]) {
+      expect(await compileWasm(source)).toBeInstanceOf(WebAssembly.Module);
+    }
+  });
+});

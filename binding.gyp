@@ -9,7 +9,7 @@
       ],
       "include_dirs": ["csrc/snappy-config", "deps/snappy"],
       "dependencies": [
-        "<!(node -p \"require('node-addon-api').targets\"):node_addon_api_except"
+        "<!(node -p \"require('node-addon-api').targets\"):node_addon_api_except_all"
       ],
       "defines": [
         "NAPI_VERSION=8",

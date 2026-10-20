@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -42,8 +43,13 @@ Napi::Buffer<uint8_t> TakeBuffer(Napi::Env env, sjs_buf* buf) {
   buf->data = nullptr;
   buf->size = 0;
   buf->cap = 0;
-  return Napi::Buffer<uint8_t>::NewOrCopy(env, data, size,
-                                          [](Napi::Env, uint8_t* p) { free(p); });
+  try {
+    return Napi::Buffer<uint8_t>::NewOrCopy(env, data, size,
+                                            [](Napi::Env, uint8_t* p) { free(p); });
+  } catch (...) {
+    free(data);  // the copy failed, so no finalizer will run
+    throw;
+  }
 }
 
 Napi::Uint8Array BytesArg(const Napi::CallbackInfo& info, size_t index, const char* name) {
@@ -78,8 +84,14 @@ const uint8_t* DataOrNull(const std::vector<uint8_t>& v) {
   return v.empty() ? nullptr : v.data();
 }
 
+// Copies an input for a worker thread. Running out of memory here is an
+// ordinary SnappyError, not a process abort.
 std::vector<uint8_t> CopyBytes(const Napi::Uint8Array& a) {
-  return std::vector<uint8_t>(a.Data(), a.Data() + a.ByteLength());
+  try {
+    return std::vector<uint8_t>(a.Data(), a.Data() + a.ByteLength());
+  } catch (const std::bad_alloc&) {
+    throw MakeError(a.Env(), SJS_ERR_NOMEM, "out of memory");
+  }
 }
 
 // ---- async one-shot ------------------------------------------------------

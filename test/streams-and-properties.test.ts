@@ -1,7 +1,18 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { backends, chunk, concat, errorCode, pipeChunks, randomBytes, STREAM_IDENTIFIER, textBytes, uncompressedChunk } from './helpers.js';
+import {
+  backends,
+  chunk,
+  compressedChunk,
+  concat,
+  errorCode,
+  pipeChunks,
+  randomBytes,
+  STREAM_IDENTIFIER,
+  textBytes,
+  uncompressedChunk,
+} from './helpers.js';
 
 const framed = { format: 'framed' } as const;
 
@@ -197,6 +208,51 @@ describe('native and wasm agree', () => {
         expect(await pipeChunks(wasm.createDecompressStream(), streamed, () => 1234)).toEqual(src);
       }
     }
+  });
+
+  it('accept and reject exactly the same input', () => {
+    // Elements with extreme length and offset fields, where 32-bit (wasm) and
+    // 64-bit arithmetic could disagree.
+    const u32 = fc.oneof(fc.constantFrom(0, 1, 0x7fffffff, 0xfffffffe, 0xffffffff), fc.nat({ max: 0xffffffff }));
+    const le = (v: number, n: number) => Array.from({ length: n }, (_, i) => Math.floor(v / 2 ** (8 * i)) & 0xff);
+    const element = fc.oneof(
+      fc.tuple(fc.integer({ min: 1, max: 4 }), u32).map(([n, v]) => [((59 + n) << 2) | 0, ...le(v, n)]), // long literal
+      fc.tuple(fc.integer({ min: 0, max: 63 }), u32).map(([len, v]) => [(len << 2) | 3, ...le(v, 4)]), // copy, 4-byte offset
+      fc.tuple(fc.integer({ min: 0, max: 63 }), fc.nat({ max: 0xffff })).map(([len, v]) => [(len << 2) | 2, ...le(v, 2)]),
+      fc.uint8Array({ minLength: 1, maxLength: 8 }).map((a) => [...a]),
+    );
+    const block = fc.tuple(u32, fc.array(element, { maxLength: 6 })).map(([n, parts]) => {
+      const header: number[] = [];
+      for (let v = n; ; v = Math.floor(v / 128)) {
+        if (v < 128) {
+          header.push(v);
+          break;
+        }
+        header.push((v & 0x7f) | 0x80);
+      }
+      return new Uint8Array([...header, ...parts.flat()]);
+    });
+    const outcome = (z: typeof native, data: Uint8Array, format: 'raw' | 'framed') => {
+      try {
+        return Array.from(z.decompressSync(data, { format, maxOutputSize: 1 << 20 })).join(',');
+      } catch (error) {
+        return (error as { code?: string }).code ?? String(error);
+      }
+    };
+    fc.assert(
+      fc.property(block, (data) => {
+        const raw = outcome(native, data, 'raw');
+        expect(outcome(wasm, data, 'raw')).toBe(raw);
+        // The same block as a compressed chunk, with the right checksum when it decodes.
+        let decoded = new Uint8Array(0);
+        try {
+          decoded = native.decompressSync(data, { maxOutputSize: 1 << 20 });
+        } catch {}
+        const stream = concat(STREAM_IDENTIFIER, compressedChunk(data, decoded));
+        expect(outcome(wasm, stream, 'framed')).toBe(outcome(native, stream, 'framed'));
+      }),
+      { numRuns: 5000 },
+    );
   });
 
   it('report the same snappy version', () => {

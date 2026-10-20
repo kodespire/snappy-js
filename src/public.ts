@@ -35,8 +35,8 @@ export declare function compressSync(data: Bytes | string, options?: CompressOpt
  * Decompresses one raw snappy block (the default) or, with `format: 'framed'`, every chunk of a
  * framed stream (concatenated streams are joined, skippable chunks skipped).
  *
- * Throws a {@link SnappyError} with code `ERR_SNAPPY_TRUNCATED` if the input is empty or ends
- * partway through a block or chunk, `ERR_SNAPPY_OUTPUT_LIMIT` if the output would exceed
+ * Throws a {@link SnappyError} with code `ERR_SNAPPY_TRUNCATED` if the input ends partway through
+ * a block or chunk (empty raw input included; empty framed input is an empty stream), `ERR_SNAPPY_OUTPUT_LIMIT` if the output would exceed
  * `maxOutputSize`, and `ERR_SNAPPY_CORRUPT` if the data is not valid snappy in the given
  * format. It never returns partial output.
  *

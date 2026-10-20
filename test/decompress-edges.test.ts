@@ -169,6 +169,18 @@ describe.each(backends)('%s backend: raw blocks, truncated and invalid', (_name,
     expect(syncErrorCode(() => z.decompressSync(new TextEncoder().encode('definitely not snappy')))).not.toBe('no error');
   });
 
+  it('regression: a 2^32-byte literal length is rejected in WebAssembly too', () => {
+    // A literal whose 4-byte length field is 0xffffffff means 2^32 bytes. snappy
+    // relies on a 64-bit size_t to reject it; in wasm32 it wraps to 0 and snappy
+    // alone would accept the block below as the single byte "a".
+    const block = rawHeader(1, [0xfc, 0xff, 0xff, 0xff, 0xff, 0x00, 0x61]);
+    expect(syncErrorCode(() => z.decompressSync(block))).toBe('ERR_SNAPPY_CORRUPT');
+    const a = new TextEncoder().encode('a');
+    expect(syncErrorCode(() => z.decompressSync(concat(STREAM_IDENTIFIER, compressedChunk(block, a)), { format: 'framed' }))).toBe('ERR_SNAPPY_CORRUPT');
+    // The largest representable literal length is still parsed, and rejected as too long.
+    expect(syncErrorCode(() => z.decompressSync(rawHeader(1, [0xfc, 0xfe, 0xff, 0xff, 0xff, 0x61])))).toBe('ERR_SNAPPY_CORRUPT');
+  });
+
   it('a lying length header is caught before anything is allocated', async () => {
     // 5 bytes claiming 4 GiB - 1 of output.
     const liar = rawHeader(0xffffffff, [0x00, 0x61]);

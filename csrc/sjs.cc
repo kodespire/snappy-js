@@ -11,11 +11,13 @@
 
 #include <new>
 
-#include "config.h"
+// Included the way snappy.cc includes it, so this resolves "config.h" exactly
+// as snappy's own sources do (deps/snappy first, then the include path).
+#include "snappy-stubs-internal.h"
 #include "snappy.h"
 
 #if !defined(SJS_SNAPPY_CONFIG_H)
-#error "The config.h on the include path is not csrc/snappy-config/config.h."
+#error "snappy is not reading csrc/snappy-config/config.h (is there a config.h in deps/snappy?)."
 #endif
 
 // The ARMv8 CRC32C instructions give the same checksums as the table version,
@@ -244,15 +246,16 @@ int HeaderError(const uint8_t* src, size_t size, const char** detail) {
   return Fail(SJS_ERR_CORRUPT, "invalid snappy block: bad length header", detail);
 }
 
-// Only called once snappy has rejected a raw block, to pick the error code:
-// walks the elements the way snappy's decoder does and reports
-// SJS_ERR_TRUNCATED if the input runs out before anything else is wrong.
-// It never decides whether a block is valid; snappy already has.
-int ClassifyBlock(const uint8_t* src, size_t size) {
+// Walks a raw block's elements the way snappy's decoder checks them, in 64-bit
+// arithmetic: SJS_OK if the block is valid, else SJS_ERR_TRUNCATED if the
+// input runs out before anything else is wrong, else SJS_ERR_CORRUPT. Used to
+// pick the error code once snappy has rejected a block, and on 32-bit builds
+// as a second validator (see ValidBlock). Requires a header that
+// GetUncompressedLength accepted.
+int WalkBlock(const uint8_t* src, size_t size) {
   size_t pos = 0;
   uint64_t expected = 0;
   for (int shift = 0;; shift += 7) {
-    // In bounds: DecompressRaw only gets here once GetUncompressedLength parsed it.
     const uint8_t b = src[pos++];
     expected |= static_cast<uint64_t>(b & 0x7f) << shift;
     if (b < 0x80) break;
@@ -293,7 +296,20 @@ int ClassifyBlock(const uint8_t* src, size_t size) {
     }
     produced += length;
   }
-  return SJS_ERR_CORRUPT;  // complete, so something else is wrong (e.g. trailing bytes)
+  return pos == size ? SJS_OK : SJS_ERR_CORRUPT;  // trailing bytes are invalid
+}
+
+// snappy's validator, plus WalkBlock where size_t is 32 bits (WebAssembly).
+// snappy skips one check that a 64-bit size_t makes redundant: a literal's
+// 4-byte length field of 0xffffffff means 2^32 bytes, which wraps to 0 in a
+// 32-bit size_t, so snappy alone accepts such a block on wasm32.
+// Returns SJS_OK, SJS_ERR_TRUNCATED or SJS_ERR_CORRUPT.
+int ValidBlock(const uint8_t* src, size_t size) {
+  const bool snappy_ok = snappy::IsValidCompressedBuffer(Chars(src), size);
+  if (snappy_ok && sizeof(size_t) >= 8) return SJS_OK;
+  const int walk = WalkBlock(src, size);
+  if (snappy_ok && walk == SJS_OK) return SJS_OK;
+  return walk == SJS_ERR_TRUNCATED ? SJS_ERR_TRUNCATED : SJS_ERR_CORRUPT;
 }
 
 int DecompressRaw(const uint8_t* src, size_t src_size, size_t max_output, sjs_buf* out,
@@ -307,10 +323,10 @@ int DecompressRaw(const uint8_t* src, size_t src_size, size_t max_output, sjs_bu
   if (length > max_output) {
     return Fail(SJS_ERR_OUTPUT_LIMIT, "decompressed size exceeds maxOutputSize", detail);
   }
-  if (!snappy::IsValidCompressedBuffer(Chars(src), src_size)) {
-    return ClassifyBlock(src, src_size) == SJS_ERR_TRUNCATED
-               ? Fail(SJS_ERR_TRUNCATED, "snappy input ended before the end of the block", detail)
-               : Fail(SJS_ERR_CORRUPT, "invalid snappy block", detail);
+  switch (ValidBlock(src, src_size)) {
+    case SJS_OK: break;
+    case SJS_ERR_TRUNCATED: return Fail(SJS_ERR_TRUNCATED, "snappy input ended before the end of the block", detail);
+    default: return Fail(SJS_ERR_CORRUPT, "invalid snappy block", detail);
   }
   int rc = Reserve(out, length, detail);
   if (rc != SJS_OK) return rc;
@@ -522,7 +538,7 @@ int sjs_dstream::ProcessChunk(const uint8_t* data, sjs_buf* out, const char** de
   if (rc != SJS_OK) return rc;
   uint8_t* dst = length ? out->data + out->size : &empty_out;
   if (type == kChunkCompressed) {
-    if (!snappy::IsValidCompressedBuffer(Chars(payload), payload_size) ||
+    if (ValidBlock(payload, payload_size) != SJS_OK ||
         !snappy::RawUncompress(Chars(payload), payload_size, reinterpret_cast<char*>(dst))) {
       return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: bad compressed chunk", detail);
     }
