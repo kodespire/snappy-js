@@ -233,9 +233,9 @@ int WriteChunk(Workspace* ws, int level, const uint8_t* src, size_t size, sjs_bu
 int ClassifyHeader(const uint8_t* src, size_t size) {
   for (size_t i = 0; i < 5; i++) {
     if (i == size) return SJS_ERR_TRUNCATED;
-    if (src[i] < 0x80) return i == 4 && src[i] >= 0x10 ? SJS_ERR_CORRUPT : SJS_ERR_TRUNCATED;
+    if (src[i] < 0x80) return i == 4 && src[i] >= 0x10 ? SJS_ERR_LIBRARY : SJS_ERR_TRUNCATED;
   }
-  return SJS_ERR_CORRUPT;  // more than 5 bytes: not a varint32
+  return SJS_ERR_LIBRARY;  // more than 5 bytes: not a varint32
 }
 
 int HeaderError(const uint8_t* src, size_t size, const char** detail) {
@@ -243,12 +243,12 @@ int HeaderError(const uint8_t* src, size_t size, const char** detail) {
     return Fail(SJS_ERR_TRUNCATED,
                 size ? "snappy input ended inside the block's length header" : "snappy input is empty", detail);
   }
-  return Fail(SJS_ERR_CORRUPT, "invalid snappy block: bad length header", detail);
+  return Fail(SJS_ERR_LIBRARY, "invalid snappy block: bad length header", detail);
 }
 
 // Walks a raw block's elements the way snappy's decoder checks them, in 64-bit
 // arithmetic: SJS_OK if the block is valid, else SJS_ERR_TRUNCATED if the
-// input runs out before anything else is wrong, else SJS_ERR_CORRUPT. Used to
+// input runs out before anything else is wrong, else SJS_ERR_LIBRARY. Used to
 // pick the error code once snappy has rejected a block, and on 32-bit builds
 // as a second validator (see ValidBlock). Requires a header that
 // GetUncompressedLength accepted.
@@ -276,7 +276,7 @@ int WalkBlock(const uint8_t* src, size_t size) {
         length += 1;
         pos += extra;
       }
-      if (length > expected - produced) return SJS_ERR_CORRUPT;
+      if (length > expected - produced) return SJS_ERR_LIBRARY;
       if (size - pos < length) return SJS_ERR_TRUNCATED;
       pos += static_cast<size_t>(length);
     } else {  // copy with a 1-, 2- or 4-byte offset
@@ -292,24 +292,24 @@ int WalkBlock(const uint8_t* src, size_t size) {
       if (size - pos < extra) return SJS_ERR_TRUNCATED;
       for (size_t i = 0; i < extra; i++) offset |= static_cast<uint64_t>(src[pos + i]) << (8 * i);
       pos += extra;
-      if (offset == 0 || offset > produced || length > expected - produced) return SJS_ERR_CORRUPT;
+      if (offset == 0 || offset > produced || length > expected - produced) return SJS_ERR_LIBRARY;
     }
     produced += length;
   }
-  return pos == size ? SJS_OK : SJS_ERR_CORRUPT;  // trailing bytes are invalid
+  return pos == size ? SJS_OK : SJS_ERR_LIBRARY;  // trailing bytes are invalid
 }
 
 // snappy's validator, plus WalkBlock where size_t is 32 bits (WebAssembly).
 // snappy skips one check that a 64-bit size_t makes redundant: a literal's
 // 4-byte length field of 0xffffffff means 2^32 bytes, which wraps to 0 in a
 // 32-bit size_t, so snappy alone accepts such a block on wasm32.
-// Returns SJS_OK, SJS_ERR_TRUNCATED or SJS_ERR_CORRUPT.
+// Returns SJS_OK, SJS_ERR_TRUNCATED or SJS_ERR_LIBRARY.
 int ValidBlock(const uint8_t* src, size_t size) {
   const bool snappy_ok = snappy::IsValidCompressedBuffer(Chars(src), size);
   if (snappy_ok && sizeof(size_t) >= 8) return SJS_OK;
   const int walk = WalkBlock(src, size);
   if (snappy_ok && walk == SJS_OK) return SJS_OK;
-  return walk == SJS_ERR_TRUNCATED ? SJS_ERR_TRUNCATED : SJS_ERR_CORRUPT;
+  return walk == SJS_ERR_TRUNCATED ? SJS_ERR_TRUNCATED : SJS_ERR_LIBRARY;
 }
 
 int DecompressRaw(const uint8_t* src, size_t src_size, size_t max_output, sjs_buf* out,
@@ -326,13 +326,13 @@ int DecompressRaw(const uint8_t* src, size_t src_size, size_t max_output, sjs_bu
   switch (ValidBlock(src, src_size)) {
     case SJS_OK: break;
     case SJS_ERR_TRUNCATED: return Fail(SJS_ERR_TRUNCATED, "snappy input ended before the end of the block", detail);
-    default: return Fail(SJS_ERR_CORRUPT, "invalid snappy block", detail);
+    default: return Fail(SJS_ERR_LIBRARY, "invalid snappy block", detail);
   }
   int rc = Reserve(out, length, detail);
   if (rc != SJS_OK) return rc;
   uint8_t* dst = length ? out->data + out->size : &empty_out;
   if (!snappy::RawUncompress(Chars(src), src_size, reinterpret_cast<char*>(dst))) {
-    return Fail(SJS_ERR_CORRUPT, "invalid snappy block", detail);
+    return Fail(SJS_ERR_LIBRARY, "invalid snappy block", detail);
   }
   out->size += length;
   return SJS_OK;
@@ -486,22 +486,22 @@ int sjs_dstream::BeginChunk(const char** detail) {
   chunk_size = header[1] | (header[2] << 8) | (static_cast<size_t>(header[3]) << 16);
   header_size = 0;
   if (type == kChunkStreamIdentifier) {
-    if (chunk_size != 6) return Fail(SJS_ERR_CORRUPT, kBadIdentifier, detail);
+    if (chunk_size != 6) return Fail(SJS_ERR_LIBRARY, kBadIdentifier, detail);
     state = DState::kBody;
   } else if (!seen_identifier) {
-    return Fail(SJS_ERR_CORRUPT, kNotFramed, detail);
+    return Fail(SJS_ERR_LIBRARY, kNotFramed, detail);
   } else if (type == kChunkCompressed || type == kChunkUncompressed) {
-    if (chunk_size < 4) return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: chunk too short for its checksum", detail);
+    if (chunk_size < 4) return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: chunk too short for its checksum", detail);
     if (type == kChunkUncompressed && chunk_size > 4 + kMaxChunkData) {
-      return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: uncompressed chunk holds more than 65536 bytes", detail);
+      return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: uncompressed chunk holds more than 65536 bytes", detail);
     }
     if (type == kChunkCompressed && chunk_size > MaxCompressedChunk()) {
-      return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: compressed chunk is too long to hold at most 65536 bytes",
+      return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: compressed chunk is too long to hold at most 65536 bytes",
                   detail);
     }
     state = DState::kBody;
   } else if (type < 0x80) {
-    return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: reserved unskippable chunk type (0x02-0x7f)", detail);
+    return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: reserved unskippable chunk type (0x02-0x7f)", detail);
   } else {
     // Padding (0xfe) and reserved skippable chunks (0x80-0xfd): skipped
     // without being buffered.
@@ -515,7 +515,7 @@ int sjs_dstream::ProcessChunk(const uint8_t* data, sjs_buf* out, const char** de
   state = DState::kHeader;
   if (type == kChunkStreamIdentifier) {
     // Repeats (from concatenated streams) are ignored if they are exact.
-    if (memcmp(data, kStreamIdentifier + 4, 6) != 0) return Fail(SJS_ERR_CORRUPT, kBadIdentifier, detail);
+    if (memcmp(data, kStreamIdentifier + 4, 6) != 0) return Fail(SJS_ERR_LIBRARY, kBadIdentifier, detail);
     seen_identifier = true;
     return SJS_OK;
   }
@@ -525,10 +525,10 @@ int sjs_dstream::ProcessChunk(const uint8_t* data, sjs_buf* out, const char** de
   size_t length = payload_size;
   if (type == kChunkCompressed) {
     if (!snappy::GetUncompressedLength(Chars(payload_size ? payload : &kEmpty), payload_size, &length)) {
-      return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: bad compressed chunk", detail);
+      return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: bad compressed chunk", detail);
     }
     if (length > kMaxChunkData) {
-      return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: compressed chunk holds more than 65536 bytes", detail);
+      return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: compressed chunk holds more than 65536 bytes", detail);
     }
   }
   if (length > max_output - total_out) {
@@ -540,13 +540,13 @@ int sjs_dstream::ProcessChunk(const uint8_t* data, sjs_buf* out, const char** de
   if (type == kChunkCompressed) {
     if (ValidBlock(payload, payload_size) != SJS_OK ||
         !snappy::RawUncompress(Chars(payload), payload_size, reinterpret_cast<char*>(dst))) {
-      return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: bad compressed chunk", detail);
+      return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: bad compressed chunk", detail);
     }
   } else if (length) {
     memcpy(dst, payload, length);
   }
   if (MaskedCrc32c(dst, length) != expected_crc) {
-    return Fail(SJS_ERR_CORRUPT, "invalid snappy framed stream: checksum mismatch", detail);
+    return Fail(SJS_ERR_LIBRARY, "invalid snappy framed stream: checksum mismatch", detail);
   }
   out->size += length;
   total_out += length;
@@ -571,7 +571,7 @@ int sjs_dstream::Run(const uint8_t* src, size_t src_size, sjs_buf* out, const ch
           const uint8_t b = src[pos++];
           // Fail on the first wrong byte, so that non-snappy input is
           // reported as such rather than as truncated.
-          if (!seen_identifier && b != kStreamIdentifier[header_size]) return Fail(SJS_ERR_CORRUPT, kNotFramed, detail);
+          if (!seen_identifier && b != kStreamIdentifier[header_size]) return Fail(SJS_ERR_LIBRARY, kNotFramed, detail);
           header[header_size++] = b;
         }
         if (header_size == 4) {
@@ -593,7 +593,7 @@ int sjs_dstream::Run(const uint8_t* src, size_t src_size, sjs_buf* out, const ch
           size_t take = chunk_size - body_size;
           if (take > avail) take = avail;
           if (type == kChunkStreamIdentifier && memcmp(src + pos, kStreamIdentifier + 4 + body_size, take) != 0) {
-            return Fail(SJS_ERR_CORRUPT, seen_identifier ? kBadIdentifier : kNotFramed, detail);
+            return Fail(SJS_ERR_LIBRARY, seen_identifier ? kBadIdentifier : kNotFramed, detail);
           }
           memcpy(body + body_size, src + pos, take);
           body_size += take;

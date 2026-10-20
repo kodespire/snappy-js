@@ -147,7 +147,7 @@ describe.each(backends)('%s backend: raw blocks, truncated and invalid', (_name,
         const out = z.decompressSync(bad);
         expect(out.length, `flip at ${i}`).toBe(z.getUncompressedLength(bad));
       } catch (error) {
-        expect(['ERR_SNAPPY_CORRUPT', 'ERR_SNAPPY_TRUNCATED'], `flip at ${i}`).toContain((error as { code: string }).code);
+        expect(['ERR_SNAPPY_LIBRARY', 'ERR_SNAPPY_TRUNCATED'], `flip at ${i}`).toContain((error as { code: string }).code);
         rejected++;
       }
     }
@@ -156,15 +156,15 @@ describe.each(backends)('%s backend: raw blocks, truncated and invalid', (_name,
 
   it('trailing bytes after a complete block are rejected', () => {
     const block = z.compressSync(textBytes(1000, 1));
-    expect(syncErrorCode(() => z.decompressSync(concat(block, new Uint8Array([0]))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.decompressSync(concat(block, new Uint8Array([0]))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('invalid elements and headers are corrupt, not truncated', () => {
-    expect(syncErrorCode(() => z.decompressSync(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80, 0x01])))).toBe('ERR_SNAPPY_CORRUPT'); // 6-byte varint
-    expect(syncErrorCode(() => z.decompressSync(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x10])))).toBe('ERR_SNAPPY_CORRUPT'); // over 32 bits
-    expect(syncErrorCode(() => z.decompressSync(rawHeader(4, [0x01, 0x00])))).toBe('ERR_SNAPPY_CORRUPT'); // copy, nothing to copy from
-    expect(syncErrorCode(() => z.decompressSync(rawHeader(8, [0x00, 0x61, 0x01, 0x00])))).toBe('ERR_SNAPPY_CORRUPT'); // offset 0
-    expect(syncErrorCode(() => z.decompressSync(rawHeader(1, [0x04, 0x61, 0x62])))).toBe('ERR_SNAPPY_CORRUPT'); // literal past the end
+    expect(syncErrorCode(() => z.decompressSync(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80, 0x01])))).toBe('ERR_SNAPPY_LIBRARY'); // 6-byte varint
+    expect(syncErrorCode(() => z.decompressSync(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x10])))).toBe('ERR_SNAPPY_LIBRARY'); // over 32 bits
+    expect(syncErrorCode(() => z.decompressSync(rawHeader(4, [0x01, 0x00])))).toBe('ERR_SNAPPY_LIBRARY'); // copy, nothing to copy from
+    expect(syncErrorCode(() => z.decompressSync(rawHeader(8, [0x00, 0x61, 0x01, 0x00])))).toBe('ERR_SNAPPY_LIBRARY'); // offset 0
+    expect(syncErrorCode(() => z.decompressSync(rawHeader(1, [0x04, 0x61, 0x62])))).toBe('ERR_SNAPPY_LIBRARY'); // literal past the end
     expect(syncErrorCode(() => z.decompressSync(rawHeader(2, [0x04, 0x61])))).toBe('ERR_SNAPPY_TRUNCATED'); // literal cut short
     expect(syncErrorCode(() => z.decompressSync(new TextEncoder().encode('definitely not snappy')))).not.toBe('no error');
   });
@@ -174,11 +174,11 @@ describe.each(backends)('%s backend: raw blocks, truncated and invalid', (_name,
     // relies on a 64-bit size_t to reject it; in wasm32 it wraps to 0 and snappy
     // alone would accept the block below as the single byte "a".
     const block = rawHeader(1, [0xfc, 0xff, 0xff, 0xff, 0xff, 0x00, 0x61]);
-    expect(syncErrorCode(() => z.decompressSync(block))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.decompressSync(block))).toBe('ERR_SNAPPY_LIBRARY');
     const a = new TextEncoder().encode('a');
-    expect(syncErrorCode(() => z.decompressSync(concat(STREAM_IDENTIFIER, compressedChunk(block, a)), { format: 'framed' }))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.decompressSync(concat(STREAM_IDENTIFIER, compressedChunk(block, a)), { format: 'framed' }))).toBe('ERR_SNAPPY_LIBRARY');
     // The largest representable literal length is still parsed, and rejected as too long.
-    expect(syncErrorCode(() => z.decompressSync(rawHeader(1, [0xfc, 0xfe, 0xff, 0xff, 0xff, 0x61])))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => z.decompressSync(rawHeader(1, [0xfc, 0xfe, 0xff, 0xff, 0xff, 0x61])))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('a lying length header is caught before anything is allocated', async () => {
@@ -243,25 +243,25 @@ describe.each(backends)('%s backend: framed streams, truncated and invalid', (_n
     for (let cut = 1; cut < STREAM_IDENTIFIER.length; cut++) {
       expect(syncErrorCode(() => decodeFramed(STREAM_IDENTIFIER.subarray(0, cut)))).toBe('ERR_SNAPPY_TRUNCATED');
     }
-    expect(syncErrorCode(() => decodeFramed(new TextEncoder().encode('abc')))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(new TextEncoder().encode('\xff\x06\x00\x00sNa')))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(chunk(0xff, new TextEncoder().encode('snappy'))))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(chunk(0xff, new TextEncoder().encode('sNaPpY!'))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(new TextEncoder().encode('abc')))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(new TextEncoder().encode('\xff\x06\x00\x00sNa')))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(chunk(0xff, new TextEncoder().encode('snappy'))))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(chunk(0xff, new TextEncoder().encode('sNaPpY!'))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('the first chunk must be the stream identifier', () => {
     const data = textBytes(100, 1);
-    expect(syncErrorCode(() => decodeFramed(uncompressedChunk(data)))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(concat(chunk(0xfe, new Uint8Array(4)), STREAM_IDENTIFIER)))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(uncompressedChunk(data)))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(concat(chunk(0xfe, new Uint8Array(4)), STREAM_IDENTIFIER)))).toBe('ERR_SNAPPY_LIBRARY');
     // A raw block is not a framed stream.
-    expect(syncErrorCode(() => decodeFramed(z.compressSync(data)))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(z.compressSync(data)))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('repeated stream identifiers are ignored only when exact', () => {
     const data = textBytes(500, 4);
     expect(decodeFramed(concat(STREAM_IDENTIFIER, STREAM_IDENTIFIER, uncompressedChunk(data), STREAM_IDENTIFIER))).toEqual(data);
     const bad = concat(STREAM_IDENTIFIER, uncompressedChunk(data), chunk(0xff, new TextEncoder().encode('SNAPPY')));
-    expect(syncErrorCode(() => decodeFramed(bad))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(bad))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('padding and reserved skippable chunks are skipped wherever they appear', () => {
@@ -282,17 +282,17 @@ describe.each(backends)('%s backend: framed streams, truncated and invalid', (_n
   it('reserved unskippable chunks (0x02-0x7f) are rejected', () => {
     for (const type of [0x02, 0x10, 0x7f]) {
       const stream = concat(STREAM_IDENTIFIER, chunk(type, new Uint8Array(8)));
-      expect(syncErrorCode(() => decodeFramed(stream)), `type ${type}`).toBe('ERR_SNAPPY_CORRUPT');
+      expect(syncErrorCode(() => decodeFramed(stream)), `type ${type}`).toBe('ERR_SNAPPY_LIBRARY');
     }
   });
 
   it('checksum mismatches are rejected for compressed and uncompressed chunks', () => {
     const data = textBytes(2000, 6);
     const crc = maskedCrc(data) ^ 1;
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, uncompressedChunk(data, crc))))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(data), data, crc))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, uncompressedChunk(data, crc))))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(data), data, crc))))).toBe('ERR_SNAPPY_LIBRARY');
     // The checksum covers the uncompressed data, not the compressed bytes.
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(data), data, maskedCrc(z.compressSync(data))))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(data), data, maskedCrc(z.compressSync(data))))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('chunk sizes are limited to 64 KiB of data', () => {
@@ -300,20 +300,20 @@ describe.each(backends)('%s backend: framed streams, truncated and invalid', (_n
     expect(decodeFramed(concat(STREAM_IDENTIFIER, uncompressedChunk(full)))).toEqual(full);
     expect(decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(full), full)))).toEqual(full);
     const over = randomBytes(65537, 7);
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, uncompressedChunk(over))))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(over), over))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, uncompressedChunk(over))))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(z.compressSync(over), over))))).toBe('ERR_SNAPPY_LIBRARY');
     // Too long to be any encoding of 64 KiB: rejected from the header, before buffering.
     const huge = concat(STREAM_IDENTIFIER, chunk(0x00, new Uint8Array(200_000)).subarray(0, 4));
-    expect(syncErrorCode(() => decodeFramed(huge))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(huge))).toBe('ERR_SNAPPY_LIBRARY');
     // Data chunks need room for their checksum.
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, chunk(0x01, new Uint8Array(3)))))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, chunk(0x00, new Uint8Array(0)))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, chunk(0x01, new Uint8Array(3)))))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, chunk(0x00, new Uint8Array(0)))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('a corrupt block inside a chunk is corrupt, not truncated', () => {
     const data = textBytes(2000, 8);
     const block = z.compressSync(data);
-    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(block.subarray(0, block.length - 1), data))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(syncErrorCode(() => decodeFramed(concat(STREAM_IDENTIFIER, compressedChunk(block.subarray(0, block.length - 1), data))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('a damaged stream never decodes to wrong data', () => {
@@ -331,7 +331,7 @@ describe.each(backends)('%s backend: framed streams, truncated and invalid', (_n
         expect(decodeFramed(bad), `flip at ${i}`).toEqual(src);
       } catch (error) {
         if (!(error as { code?: string }).code) throw error;
-        expect(['ERR_SNAPPY_CORRUPT', 'ERR_SNAPPY_TRUNCATED'], `flip at ${i}`).toContain((error as { code: string }).code);
+        expect(['ERR_SNAPPY_LIBRARY', 'ERR_SNAPPY_TRUNCATED'], `flip at ${i}`).toContain((error as { code: string }).code);
         rejected++;
       }
     }

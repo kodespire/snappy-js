@@ -138,7 +138,7 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
 | Code | Meaning |
 | --- | --- |
 | `ERR_SNAPPY_TRUNCATED` | The input ended partway through a raw block or a framed chunk. Also thrown for empty raw input. |
-| `ERR_SNAPPY_CORRUPT` | Not valid Snappy in the given format: a bad block, a checksum mismatch, a missing stream identifier, a reserved chunk type. |
+| `ERR_SNAPPY_LIBRARY` | Not valid Snappy in the given format: a bad block, a checksum mismatch, a missing stream identifier, a reserved chunk type. |
 | `ERR_SNAPPY_OUTPUT_LIMIT` | The output would exceed `maxOutputSize`. |
 | `ERR_SNAPPY_NOT_INITIALIZED` | A sync function was called in a browser or Worker before `await init()`. |
 | `ERR_SNAPPY_OUT_OF_MEMORY`, `ERR_SNAPPY_INVALID_ARGUMENT` | As named. `INVALID_ARGUMENT` includes raw input of 4 GiB or more. |

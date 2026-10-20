@@ -35,7 +35,7 @@ extern "C" {
 
 enum {
   SJS_OK = 0,
-  SJS_ERR_CORRUPT = 1,      /* not valid snappy data: bad block, CRC mismatch, bad chunk */
+  SJS_ERR_LIBRARY = 1,      /* not valid snappy data: bad block, CRC mismatch, bad chunk */
   SJS_ERR_TRUNCATED = 2,    /* input ended before the end of a block or chunk (or was empty) */
   SJS_ERR_OUTPUT_LIMIT = 3, /* decompressed size would exceed max_output */
   SJS_ERR_NOMEM = 4,        /* allocation failed */

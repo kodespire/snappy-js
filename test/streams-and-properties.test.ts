@@ -74,8 +74,8 @@ describe.each(backends)('%s backend: streams', (_name, z) => {
   it('decompress stream errors on corrupt input, and on input that is not framed', async () => {
     const stream = z.compressSync(textBytes(100_000, 4), framed);
     stream[stream.length >> 1]! ^= 0xff;
-    expect(await errorCode(() => pipeChunks(z.createDecompressStream(), stream))).toBe('ERR_SNAPPY_CORRUPT');
-    expect(await errorCode(() => pipeChunks(z.createDecompressStream(), z.compressSync(textBytes(1000, 4))))).toBe('ERR_SNAPPY_CORRUPT');
+    expect(await errorCode(() => pipeChunks(z.createDecompressStream(), stream))).toBe('ERR_SNAPPY_LIBRARY');
+    expect(await errorCode(() => pipeChunks(z.createDecompressStream(), z.compressSync(textBytes(1000, 4))))).toBe('ERR_SNAPPY_LIBRARY');
   });
 
   it('cancelling a stream while a chunk is being processed is clean', async () => {
@@ -156,7 +156,7 @@ describe.each(backends)('%s backend: properties', (_name, z) => {
             const out = z.decompressSync(data, { format });
             if (format === 'raw') expect(out.length).toBe(z.getUncompressedLength(data));
           } catch (error) {
-            expect(['ERR_SNAPPY_CORRUPT', 'ERR_SNAPPY_TRUNCATED']).toContain((error as { code?: string }).code);
+            expect(['ERR_SNAPPY_LIBRARY', 'ERR_SNAPPY_TRUNCATED']).toContain((error as { code?: string }).code);
           }
         },
       ),
@@ -180,7 +180,7 @@ describe.each(backends)('%s backend: properties', (_name, z) => {
             if (out.length === src.length) expect(out).toEqual(src);
             else expect(stream[where % stream.length]!).toBeGreaterThanOrEqual(0x80);
           } catch (error) {
-            expect(['ERR_SNAPPY_CORRUPT', 'ERR_SNAPPY_TRUNCATED']).toContain((error as { code?: string }).code);
+            expect(['ERR_SNAPPY_LIBRARY', 'ERR_SNAPPY_TRUNCATED']).toContain((error as { code?: string }).code);
           }
         },
       ),
