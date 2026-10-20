@@ -1,0 +1,74 @@
+# Weekly: if google/snappy has published a newer release than deps/snappy is
+# pinned to, open a pull request that moves the submodule to it. CI then runs
+# the full test suite against the new version.
+#
+# Snappy normally generates two headers with CMake; this package keeps
+# hand-written copies in csrc/snappy-config/. The job bumps the version
+# defines in snappy-stubs-public.h, and test/version.test.ts fails the PR if
+# upstream changed either template (a new config knob, a changed public header),
+# so those changes get a human look before merging.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" enabled in
+# Settings > Actions > General. Pull requests opened with GITHUB_TOKEN do not
+# trigger CI on their own, so the job starts the CI workflow on the branch itself.
+name: Update snappy
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Compare with the latest upstream release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Snappy tags have no "v" prefix (1.3.1).
+          latest="$(gh release view -R google/snappy --json tagName -q .tagName)"
+          latest_sha="$(gh api "repos/google/snappy/commits/$latest" --jq .sha)"
+          current_sha="$(git -C deps/snappy rev-parse HEAD)"
+          current="$(sed -n "s/export const SNAPPY_VERSION = '\(.*\)';/\1/p" src/version.ts)"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "outdated=$([ "$latest_sha" = "$current_sha" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "pinned: $current ($current_sha), latest: $latest ($latest_sha)"
+      - name: Open a pull request
+        if: steps.check.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          CURRENT: ${{ steps.check.outputs.current }}
+        run: |
+          branch="update-snappy-$LATEST"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "branch $branch already exists"; exit 0
+          fi
+          git -C deps/snappy fetch --depth 1 origin tag "$LATEST"
+          git -C deps/snappy checkout "$LATEST"
+          IFS=. read -r major minor patch <<< "$LATEST"
+          sed -i "s/export const SNAPPY_VERSION = '.*';/export const SNAPPY_VERSION = '$LATEST';/" src/version.ts
+          sed -i -e "s/^#define SNAPPY_MAJOR .*/#define SNAPPY_MAJOR $major/" \
+                 -e "s/^#define SNAPPY_MINOR .*/#define SNAPPY_MINOR $minor/" \
+                 -e "s/^#define SNAPPY_PATCHLEVEL .*/#define SNAPPY_PATCHLEVEL $patch/" \
+                 csrc/snappy-config/snappy-stubs-public.h
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add deps/snappy src/version.ts csrc/snappy-config/snappy-stubs-public.h
+          git commit -m "Update snappy to $LATEST"
+          git push origin "$branch"
+          gh workflow run ci.yml --ref "$branch"
+          gh pr create --title "Update snappy to $LATEST" --body "Moves deps/snappy from $CURRENT to [$LATEST](https://github.com/google/snappy/releases/tag/$LATEST). CI runs the full suite against it. If test/version.test.ts fails, upstream changed cmake/config.h.in or snappy-stubs-public.h.in: update csrc/snappy-config/ to match before merging. Also check the release notes for new compression levels (src/version.ts)."
