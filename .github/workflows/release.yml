@@ -9,10 +9,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    # TEMPORARY: dry run before this workflow exists on main (workflow_dispatch
-    # cannot target it until then). Removed before merge. Publishing stays
-    # gated on refs/tags/v*.
-    branches: [initial-implementation]
   workflow_dispatch:
 
 permissions:
