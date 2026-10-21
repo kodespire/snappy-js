@@ -2,7 +2,9 @@
 
 The native addon and `snappy.wasm` in this package are compiled from
 [Snappy](https://github.com/google/snappy) 1.3.1 (`snappy.cc`, `snappy-sinksource.cc`,
-`snappy-stubs-internal.cc` and their headers), used under its BSD license:
+`snappy-stubs-internal.cc` and their headers), used under its BSD license. The same
+files ship in `deps/snappy/`, with Snappy's `COPYING`, for the React Native build to
+compile:
 
 ```
 Copyright 2011, Google Inc.
