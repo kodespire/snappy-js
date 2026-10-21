@@ -97,6 +97,8 @@ export interface Backend {
 export interface BackendProvider {
   get(): Promise<Backend>;
   getSync(): Backend;
+  /** The backend if it is already loaded, without loading it. */
+  ready(): Backend | undefined;
   init(source?: WasmSource): Promise<void>;
   kind(): BackendKind;
 }

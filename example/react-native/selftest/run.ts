@@ -333,12 +333,19 @@ const tests: [name: string, run: (log: Log) => Promise<void>][] = [
     assert(syncMs >= 50, `a ${data.length >> 20} MiB job takes only ${syncMs.toFixed(0)} ms: too fast to measure`);
     assert(ticks >= 10, `only ${ticks} timer ticks in ${inFlight.toFixed(0)} ms of jobs in flight`);
     assert(maxGap < syncMs / 2, `JS thread stalled for ${maxGap.toFixed(0)} ms while a job was in flight; one job takes ${syncMs.toFixed(0)} ms`);
-    // Several jobs at once, each on its own input.
+    // Several jobs at once, and inputs captured at call time.
+    const format = (i: number) => (i % 2 ? 'framed' : 'raw');
     const inputs = [1, 2, 3, 4].map((seed) => textBytes(500_000, seed));
-    const outputs = await Promise.all(inputs.map((input, i) => compress(input, i % 2 ? FRAMED : 1)));
-    for (let i = 0; i < outputs.length; i++) {
-      assertBytes(decompressSync(outputs[i]!, { format: i % 2 ? 'framed' : 'raw' }), inputs[i]!, `job ${i}`);
-    }
+    const expected = inputs.map((input) => input.slice());
+    const pending = inputs.map((input, i) => compress(input, { format: format(i) }));
+    for (const input of inputs) input.fill(0);
+    const outputs = await Promise.all(pending);
+    for (let i = 0; i < outputs.length; i++) assertBytes(decompressSync(outputs[i]!, { format: format(i) }), expected[i]!, `compress job ${i}`);
+    const packed2 = outputs.map((output) => output.slice());
+    const unpacking = packed2.map((data, i) => decompress(data, { format: format(i) }));
+    for (const data of packed2) data.fill(0);
+    const unpacked = await Promise.all(unpacking);
+    for (let i = 0; i < unpacked.length; i++) assertBytes(unpacked[i]!, expected[i]!, `decompress job ${i}`);
   }],
 
   ['streams', async (log) => {

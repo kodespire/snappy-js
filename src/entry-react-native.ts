@@ -18,6 +18,7 @@ const provider: BackendProvider = native
   ? {
       get: async () => native,
       getSync: () => native,
+      ready: () => native,
       init: async () => {},
       kind: () => 'native',
     }

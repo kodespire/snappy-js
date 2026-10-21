@@ -1,6 +1,6 @@
 {
   "name": "@kodespire/snappy-js",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Snappy compression for Node.js, Bun, Deno, browsers, edge runtimes and React Native: raw blocks and the framing format. Native bindings to the official google/snappy library with a WebAssembly fallback.",
   "keywords": [
     "snappy",

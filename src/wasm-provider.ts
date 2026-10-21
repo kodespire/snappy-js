@@ -24,6 +24,7 @@ export function createWasmProvider(
   return {
     get: () => (backend ? Promise.resolve(backend) : load()),
     getSync: () => (backend ??= instantiateWasmBackendSync(compileSync())),
+    ready: () => backend,
     init: async (source) => {
       if (!backend) await load(source);
     },
