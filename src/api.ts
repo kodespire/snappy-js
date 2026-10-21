@@ -9,6 +9,7 @@ import {
 import {
   MODE_CONTINUE,
   MODE_END,
+  type Backend,
   type BackendKind,
   type BackendProvider,
   type Bytes,
@@ -31,12 +32,21 @@ export function isSnappyFramed(data: Bytes): boolean {
 }
 
 export function createApi(provider: BackendProvider) {
+  // Starts `call` with the caller's bytes as they are right now. A loaded backend is
+  // called immediately, and every backend copies its input before returning. While
+  // the backend is still loading, the input is copied first (new Uint8Array copies;
+  // Buffer#slice would return a view), so changes made after the call are not seen.
+  function withBackend<T>(input: Uint8Array, call: (backend: Backend, input: Uint8Array) => Promise<T>): Promise<T> {
+    const backend = provider.ready();
+    if (backend) return call(backend, input);
+    const copy = new Uint8Array(input);
+    return provider.get().then((loaded) => call(loaded, copy));
+  }
+
   /** Compresses `data` into a raw snappy block, or a framed stream. Strings are encoded as UTF-8. */
   async function compress(data: Bytes | string, options?: CompressOptions | number): Promise<Uint8Array> {
     const o = resolveCompressOptions(options, 'compress');
-    const input = toInputBytes(data);
-    const backend = await provider.get();
-    return backend.compress(input, o.level, o.format);
+    return withBackend(toInputBytes(data), (backend, input) => backend.compress(input, o.level, o.format));
   }
 
   /** Synchronous `compress`. In browsers and edge runtimes, call `await init()` first. */
@@ -51,9 +61,7 @@ export function createApi(provider: BackendProvider) {
    */
   async function decompress(data: Bytes, options?: DecompressOptions): Promise<Uint8Array> {
     const o = resolveDecompressOptions(options, 'decompress');
-    const input = toBytes(data, 'data');
-    const backend = await provider.get();
-    return backend.decompress(input, o.format, o.maxOutputSize);
+    return withBackend(toBytes(data, 'data'), (backend, input) => backend.decompress(input, o.format, o.maxOutputSize));
   }
 
   /** Synchronous `decompress`. In browsers and edge runtimes, call `await init()` first. */
