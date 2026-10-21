@@ -1,12 +1,13 @@
 # snappy-js
 
 [![CI](https://github.com/kodespire/snappy-js/actions/workflows/ci.yml/badge.svg)](https://github.com/kodespire/snappy-js/actions/workflows/ci.yml)
+[![React Native](https://github.com/kodespire/snappy-js/actions/workflows/react-native.yml/badge.svg)](https://github.com/kodespire/snappy-js/actions/workflows/react-native.yml)
 
-Snappy compression for Node.js, Bun, Deno, browsers and edge runtimes, with one API everywhere. Reads and writes both raw Snappy blocks and the Snappy framing format.
+Snappy compression for Node.js, Bun, Deno, browsers, edge runtimes and React Native, with one API everywhere. Reads and writes both raw Snappy blocks and the Snappy framing format.
 
 - **The official library.** Compiled from [google/snappy](https://github.com/google/snappy) 1.3.1, pinned as a git submodule. A weekly job opens a PR when upstream releases.
-- **Native where possible, WebAssembly everywhere else.** Node.js and Bun use a Node-API addon. Browsers, Deno and Workers use WebAssembly built from the same C++ code. If no prebuilt binary matches your platform, the package switches to WebAssembly on its own.
-- **The same bytes everywhere.** Compressed output is byte-identical on every platform and in WebAssembly, so a payload's bytes never depend on where it was made.
+- **Native where possible, WebAssembly everywhere else.** Node.js and Bun use a Node-API addon, and React Native uses a JSI module. Browsers, Deno and Workers use WebAssembly built from the same C++ code. If no prebuilt binary matches your platform, the package switches to WebAssembly on its own.
+- **The same bytes everywhere.** Compressed output is byte-identical on every platform, in WebAssembly and on iOS and Android, so a payload's bytes never depend on where it was made.
 - **No install scripts.** Prebuilt binaries ship inside the package. `npm install` never downloads or compiles anything.
 - **Never returns partial data.** Cut-off input, corrupt input and output over your size limit all throw. They never return what was decoded so far.
 
@@ -88,6 +89,21 @@ await init();
 const block = compressSync('hello');
 ```
 
+### React Native
+
+```sh
+npm install @kodespire/snappy-js
+cd ios && pod install
+```
+
+Then rebuild the app (`npx react-native run-ios`, `run-android`, or `npx expo run:ios` and `run:android`). The package contains a C++ TurboModule compiled from the same C++ code as the other builds, with the same hand-written Snappy config headers, so its output is byte-identical to theirs. Autolinking adds it to the iOS build (CocoaPods) and the Android build (CMake). It needs React Native 0.84 or later with the New Architecture, which is the default. The API, options and error codes are the same as everywhere else.
+
+- **iOS 27 needs a `SceneDelegate`.** iOS 27 stops apps that don't use the UIScene lifecycle, and the app templates of React Native 0.84 to 0.87 don't. This has nothing to do with this package, but such an app crashes at launch on iOS 27 before any of your code runs. Apps from the 0.88 template already have one. For older apps, move the window setup from `AppDelegate` into a `SceneDelegate` and declare it under `UIApplicationSceneManifest` in `Info.plist`, as [the example app](example/react-native/ios/SnappyExample) does.
+- **Expo:** works in development builds and EAS builds. **Expo Go can't load it**, because Expo Go only contains Expo's own native code. In Expo Go, calls reject with `ERR_SNAPPY_NOT_INITIALIZED` and a message saying so. There's no fallback: Hermes has no WebAssembly.
+- **Async calls run on background threads**, so `await compress(bigFile)` doesn't block the JS thread. The sync versions run on the JS thread.
+- **Streams need a `TransformStream`**, and Hermes doesn't have one. Expo installs one. In bare React Native, install [web-streams-polyfill](https://github.com/MattiasBuelens/web-streams-polyfill) and `import 'web-streams-polyfill/polyfill'` once at startup. Without it, `createCompressStream()` throws a `TypeError` that says this. The package doesn't bundle a polyfill: React Native's `fetch` doesn't stream bodies, so there's little to pipe, Expo already ships one, and a second copy would add about 65 KB to every app.
+- **Web (Expo web, react-native-web):** the web build gets the WebAssembly version, like any browser build. Metro doesn't copy `snappy.wasm`, so put `node_modules/@kodespire/snappy-js/dist/snappy.wasm` in your `public/` folder and call `await init('/snappy.wasm')` before the first call.
+
 ### Untrusted input
 
 A raw block's header says how big the output is, and nothing stops it from lying. Always pass `maxOutputSize` when decompressing data you don't control.
@@ -140,13 +156,13 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
 | `ERR_SNAPPY_TRUNCATED` | The input ended partway through a raw block or a framed chunk. Also thrown for empty raw input. |
 | `ERR_SNAPPY_LIBRARY` | Not valid Snappy in the given format: a bad block, a checksum mismatch, a missing stream identifier, a reserved chunk type. |
 | `ERR_SNAPPY_OUTPUT_LIMIT` | The output would exceed `maxOutputSize`. |
-| `ERR_SNAPPY_NOT_INITIALIZED` | A sync function was called in a browser or Worker before `await init()`. |
+| `ERR_SNAPPY_NOT_INITIALIZED` | A sync function was called in a browser or Worker before `await init()`, or the React Native module isn't in the app (Expo Go). |
 | `ERR_SNAPPY_OUT_OF_MEMORY`, `ERR_SNAPPY_INVALID_ARGUMENT` | As named. `INVALID_ARGUMENT` includes raw input of 4 GiB or more. |
 
 ## Behaviour details
 
 - **Raw blocks have no checksum.** A damaged length, tag or offset is caught, and output never comes back longer or shorter than the header says. But damage inside literal bytes decodes to wrong bytes, as with any Snappy decoder. Use the framing format when you need corruption detected.
-- **WebAssembly validates raw blocks twice.** One of snappy's checks relies on a 64-bit `size_t`: in wasm32, a literal length of 2^32 wraps to 0, so snappy alone would accept a block that native builds reject. Where `size_t` is 32 bits, every block must also pass a second validator using 64-bit arithmetic, so both backends accept exactly the same input.
+- **WebAssembly and 32-bit Android validate raw blocks twice.** One of snappy's checks relies on a 64-bit `size_t`: in wasm32, a literal length of 2^32 wraps to 0, so snappy alone would accept a block that 64-bit builds reject. Where `size_t` is 32 bits (WebAssembly, and the `armeabi-v7a` and `x86` Android builds), every block must also pass a second validator using 64-bit arithmetic, so every build accepts exactly the same input.
 - **Every proper prefix of a raw block throws** `ERR_SNAPPY_TRUNCATED`. That includes an empty input, since even an empty block has a 1-byte header.
 - **A framed stream cut between two chunks can't be detected.** The framing format has no end-of-stream marker, so that cut looks like a complete, shorter stream. A cut anywhere inside a chunk throws `ERR_SNAPPY_TRUNCATED`.
 - **An empty input is a valid, empty framed stream**, which is what Go's and Rust's encoders write for no data. Like any cut between chunks, it can't be told apart from a truncation. This differs on purpose from zstd-js, where empty input is an error. Compressing empty input writes just the 10-byte stream identifier.
@@ -157,8 +173,8 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
   - Every checksum is verified.
 - **Framed chunk limits.** A data chunk may hold at most 65,536 bytes of output. A compressed chunk can't be longer than the most any Snappy encoder writes for that much data, which Go's decoder also enforces. Longer chunks are rejected from their header, before they are buffered, so a decompress stream never holds more than about 75 KB of input.
 - **Compressed chunks must save at least 12.5%.** The compressor stores a chunk uncompressed otherwise, like the Go and Rust encoders. Chunks always hold 64 KiB of input except the last.
-- **Output is the same on every platform.** Snappy can use a hardware CRC instruction as its hash, which changes the compressed bytes. That option is off, so native output on every platform and WebAssembly output all match byte for byte. Decompression uses SSSE3/BMI2/NEON only where the compiler targets them by default (in the prebuilt binaries, NEON on 64-bit ARM Linux and macOS), and plain code in WebAssembly and MSVC builds.
-- **The async functions use separate threads only on the native addon**, which runs them on Node's thread pool. The WebAssembly backend runs on the calling thread, so for large inputs in a browser, call it from a Web Worker.
+- **Output is the same on every platform.** Snappy can use a hardware CRC instruction as its hash, which changes the compressed bytes. That option is off, so native output on every platform and WebAssembly output all match byte for byte. Decompression uses SSSE3/BMI2/NEON only where the compiler targets them by default (in the prebuilt binaries, NEON on 64-bit ARM Linux and macOS; on React Native, NEON on 64-bit ARM iOS and Android, and SSSE3 on x86 Android and the Intel iOS simulator), and plain code in WebAssembly and MSVC builds.
+- **The async functions use separate threads only on the native backends.** The Node addon runs them on Node's thread pool, and React Native on a small pool of its own. The WebAssembly backend runs on the calling thread, so for large inputs in a browser, call it from a Web Worker.
 - **Forcing WebAssembly:** set `SNAPPY_JS_BACKEND=wasm` in Node.js, or import `@kodespire/snappy-js/wasm` in any runtime.
 
 ## Runtimes
@@ -170,13 +186,14 @@ An unknown option name throws a `TypeError`. A typo like `{ framed: true }` fail
 | Deno 2 | WebAssembly | Linux |
 | Chromium, Firefox, WebKit | WebAssembly | Playwright, through Vite |
 | Cloudflare Workers (`workerd` condition) | WebAssembly | `wrangler dev` (workerd) |
+| React Native 0.84+ on iOS and Android (`react-native` condition) | native (JSI) | iOS simulator, Android emulators (64-bit and 32-bit) |
 
 Prebuilt native binaries cover:
 - macOS arm64 and x64
 - Linux x64 and arm64 (glibc 2.28+ and musl)
 - Windows x64 and arm64
 
-Bundlers that understand `new URL('./snappy.wasm', import.meta.url)`, such as Vite, webpack 5 and Parcel, pick up the WebAssembly file automatically. For anything else, serve `@kodespire/snappy-js/snappy.wasm` yourself and pass its URL to `init()`.
+Bundlers that understand `new URL('./snappy.wasm', import.meta.url)`, such as Vite, webpack 5 and Parcel, pick up the WebAssembly file automatically. For anything else, including Metro for the web, serve `@kodespire/snappy-js/snappy.wasm` yourself and pass its URL to `init()`.
 
 ## Development
 
@@ -191,9 +208,19 @@ npm test
 BROWSERS=chromium npx vitest run -c vitest.browser.config.ts
 ```
 
-`csrc/sjs.cc` holds all compression logic, including the framing format, which google/snappy does not implement. Both builds share it. `csrc/addon.cc` (Node-API) and `src/wasm-backend.ts` (WebAssembly) only move bytes in and out.
+The React Native example app runs a self-test on a simulator or emulator. Its `npm install` packs the package the way npm would publish it, so build `dist/` first:
 
-Snappy's CMake build normally generates `config.h` and `snappy-stubs-public.h`. Both builds use hand-written copies instead, in `csrc/snappy-config/`, with each setting documented. `test/version.test.ts` checks them against upstream's templates.
+```sh
+cd example/react-native
+npm install
+(cd ios && bundle install && bundle exec pod install)
+npm run selftest:ios       # boots a simulator if none is running
+npm run selftest:android   # start an emulator first; needs ANDROID_HOME
+```
+
+`csrc/sjs.cc` holds all compression logic, including the framing format, which google/snappy does not implement. Every build shares it. `csrc/addon.cc` (Node-API), `cpp/KodespireSnappyModule.cpp` (React Native) and `src/wasm-backend.ts` (WebAssembly) only move bytes in and out.
+
+Snappy's CMake build normally generates `config.h` and `snappy-stubs-public.h`. Every build uses hand-written copies instead, in `csrc/snappy-config/`, with each setting documented: `binding.gyp`, `scripts/build-wasm.mjs`, `KodespireSnappy.podspec` and `android/CMakeLists.txt` all compile Snappy with `HAVE_CONFIG_H` and `NDEBUG` and no `-m` flags. `test/version.test.ts` checks the headers against upstream's templates.
 
 The tests run every case against both backends. They also check:
 - interop with python-snappy and cramjam, which wrap the Rust `snap` crate, an independent implementation, both through fixtures (`test/fixtures/README.md`) and live

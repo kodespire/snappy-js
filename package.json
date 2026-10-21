@@ -1,7 +1,7 @@
 {
   "name": "@kodespire/snappy-js",
-  "version": "0.1.0",
-  "description": "Snappy compression for Node.js, Bun, Deno, browsers and edge runtimes: raw blocks and the framing format. Native bindings to the official google/snappy library with a WebAssembly fallback.",
+  "version": "0.2.0",
+  "description": "Snappy compression for Node.js, Bun, Deno, browsers, edge runtimes and React Native: raw blocks and the framing format. Native bindings to the official google/snappy library with a WebAssembly fallback.",
   "keywords": [
     "snappy",
     "compression",
@@ -10,7 +10,8 @@
     "parquet",
     "wasm",
     "napi",
-    "stream"
+    "stream",
+    "react-native"
   ],
   "license": "MIT",
   "author": "kodespire",
@@ -32,6 +33,7 @@
       "workerd": "./dist/entry-workerd.js",
       "deno": "./dist/entry-wasm.js",
       "browser": "./dist/entry-wasm.js",
+      "react-native": "./dist/entry-react-native.js",
       "node": "./dist/entry-node.js",
       "default": "./dist/entry-wasm.js"
     },
@@ -47,6 +49,7 @@
     "#load-wasm": {
       "types": "./dist/load-wasm-fetch.d.ts",
       "node": "./dist/load-wasm-node.js",
+      "react-native": "./dist/load-wasm-react-native.js",
       "default": "./dist/load-wasm-fetch.js"
     }
   },
@@ -54,7 +57,26 @@
   "files": [
     "dist",
     "prebuilds",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "cpp",
+    "csrc/sjs.cc",
+    "csrc/sjs.h",
+    "csrc/snappy-config",
+    "ios",
+    "android/build.gradle",
+    "android/CMakeLists.txt",
+    "android/src",
+    "codegen",
+    "KodespireSnappy.podspec",
+    "react-native.config.js",
+    "deps/snappy/COPYING",
+    "deps/snappy/snappy.cc",
+    "deps/snappy/snappy.h",
+    "deps/snappy/snappy-internal.h",
+    "deps/snappy/snappy-sinksource.cc",
+    "deps/snappy/snappy-sinksource.h",
+    "deps/snappy/snappy-stubs-internal.cc",
+    "deps/snappy/snappy-stubs-internal.h"
   ],
   "scripts": {
     "build": "npm run build:native && npm run build:wasm && npm run build:ts",
@@ -67,8 +89,29 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "codegenConfig": {
+    "name": "KodespireSnappySpec",
+    "type": "modules",
+    "jsSrcsDir": "codegen",
+    "android": {
+      "javaPackageName": "com.kodespire.snappy"
+    },
+    "ios": {
+      "modulesProvider": {
+        "KodespireSnappy": "KodespireSnappyModuleProvider"
+      }
+    }
+  },
   "dependencies": {
     "node-gyp-build": "^4.8.4"
+  },
+  "peerDependencies": {
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
